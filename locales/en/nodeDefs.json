@@ -1,0 +1,123 @@
+{
+  "IrodoriTTSSaveAudio": {
+    "display_name": "Irodori TTS Save Audio",
+    "description": "Save and preview audio under output/audio. Date templates use the local time at execution.",
+    "inputs": {
+      "audio": {
+        "name": "Audio"
+      },
+      "filename_prefix": {
+        "name": "Filename prefix",
+        "tooltip": "Filename prefix. Replace {yyyymmddhhmmss}, {yyyymmdd}, and {hhmmss} with the date and time."
+      },
+      "directory": {
+        "name": "Directory",
+        "tooltip": "Path relative to output/audio. Leave empty to save directly there. Supports date templates and nested folders."
+      },
+      "format": {
+        "name": "Format"
+      },
+      "bitrate": {
+        "name": "Bitrate (kbps)",
+        "tooltip": "MP3 bitrate in kbps. Ignored for WAV and FLAC."
+      },
+      "bit_depth": {
+        "name": "Bit depth",
+        "tooltip": "WAV and FLAC bit depth. Ignored for MP3."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Audio"
+      }
+    }
+  },
+  "IrodoriTTSGenerate": {
+    "display_name": "Irodori TTS Generate",
+    "description": "Generate Japanese speech with compatible Irodori-TTS models from models.json. Reference audio transcripts are not required.",
+    "inputs": {
+      "mode": {
+        "name": "Mode"
+      },
+      "text": {
+        "name": "Text"
+      },
+      "seed": {
+        "name": "Seed"
+      },
+      "steps": {
+        "name": "Steps"
+      },
+      "cfg_text": {
+        "name": "Text guidance"
+      },
+      "cfg_reference": {
+        "name": "Reference guidance"
+      },
+      "cfg_caption": {
+        "name": "Caption guidance"
+      },
+      "seconds": {
+        "name": "Duration (seconds)",
+        "tooltip": "Use 0 to predict the duration automatically, or specify a fixed duration in seconds."
+      },
+      "duration_scale": {
+        "name": "Duration scale"
+      },
+      "device": {
+        "name": "Device"
+      },
+      "precision": {
+        "name": "Precision",
+        "tooltip": "Precision for non-quantized models. Quantized models always use BF16."
+      },
+      "codec_device": {
+        "name": "Codec device"
+      },
+      "allow_download": {
+        "name": "Allow download",
+        "tooltip": "Download missing model files on the first run."
+      },
+      "caption": {
+        "name": "Caption",
+        "tooltip": "Describe vocal expression and speaking style for text_caption and text_caption_reference modes."
+      },
+      "reference_audio": {
+        "name": "Reference audio",
+        "tooltip": "Connect one or more clips from Load Reference Audios, or one clip from the standard Load Audio node."
+      },
+      "unload_after_generate": {
+        "name": "Unload after generation",
+        "tooltip": "Keep the model for reuse when disabled. Release it after generation when enabled."
+      },
+      "model_name": {
+        "name": "Model",
+        "tooltip": "Choose a model from models.json. Restart ComfyUI after editing the list. Quantized models use CUDA and BF16. Changing the model reloads it."
+      },
+      "dynamic_vram": {
+        "name": "Dynamic VRAM",
+        "tooltip": "Offload TTS model weights as needed when ComfyUI Dynamic VRAM is enabled. Otherwise, or on CPU, use standard loading. Codec device is configured separately."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Audio"
+      }
+    }
+  },
+  "IrodoriTTSLoadReferenceAudios": {
+    "display_name": "Irodori TTS Load Reference Audios",
+    "description": "Select one or more files from input/irodori_references. Each clip keeps its sample rate and duration and is passed through the same output.",
+    "inputs": {
+      "files": {
+        "name": "Files",
+        "tooltip": "Select files from input/irodori_references. Use the up and down arrows to reorder them. Files are used from top to bottom."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Reference audio"
+      }
+    }
+  }
+}

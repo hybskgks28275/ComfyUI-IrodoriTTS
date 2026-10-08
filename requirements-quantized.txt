@@ -1,0 +1,2 @@
+# Optional official quantized checkpoint support. Keep ComfyUI's existing torch.
+torchao>=0.16.0,<0.17.0

@@ -1,0 +1,43 @@
+{
+  "default_model": "Irodori-TTS-v4.1-Small",
+  "models": [
+    {
+      "model_name": "Irodori-TTS-v4.1-Small",
+      "url": "https://huggingface.co/Aratako/Irodori-TTS-v4.1-Small",
+      "revision": "2b28324dc263ed5e6638b3cf3dd94c82ead07b4b"
+    },
+    {
+      "model_name": "Irodori-TTS-v4-Large",
+      "url": "https://huggingface.co/Aratako/Irodori-TTS-v4-Large",
+      "revision": "2e0c55428ce97268a507f1feeb2478f8d9148e8b"
+    },
+    {
+      "model_name": "Irodori-TTS-v4.1-Small-Quantized",
+      "url": "https://huggingface.co/Aratako/Irodori-TTS-v4.1-Small-Quantized",
+      "revision": "ef04e6c3ba56138ae23e86a2eabc004f76990e37",
+      "variants": [
+        "int8-weight-only",
+        "int8-dynamic",
+        "int4-weight-only",
+        "float8-weight-only",
+        "float8-dynamic"
+      ]
+    },
+    {
+      "model_name": "Irodori-TTS-v4-Large-Quantized",
+      "url": "https://huggingface.co/Aratako/Irodori-TTS-v4-Large-Quantized",
+      "revision": "bdef9592db4426bd1c99ccdf0cfc3a213223fb61",
+      "variants": [
+        "int8-weight-only",
+        "int8-dynamic",
+        "int4-weight-only",
+        "float8-weight-only",
+        "float8-dynamic"
+      ]
+    }
+  ],
+  "codec": {
+    "url": "https://huggingface.co/Aratako/Semantic-DACVAE-Japanese-32dim",
+    "revision": "47376ee24834d7a05a48ebabfe3cde29b3c5e214"
+  }
+}

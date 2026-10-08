@@ -1,0 +1,123 @@
+{
+  "IrodoriTTSSaveAudio": {
+    "display_name": "Irodori TTS 音声保存",
+    "description": "output/audio配下に音声を保存し試聴。日時は実行時のローカル時刻。",
+    "inputs": {
+      "audio": {
+        "name": "音声"
+      },
+      "filename_prefix": {
+        "name": "ファイル名の接頭辞",
+        "tooltip": "接頭辞。{yyyymmddhhmmss}、{yyyymmdd}、{hhmmss}を日時へ置換。"
+      },
+      "directory": {
+        "name": "ディレクトリ",
+        "tooltip": "output/audioからの相対パス。空欄なら直下。日時置換とサブフォルダーに対応。"
+      },
+      "format": {
+        "name": "フォーマット"
+      },
+      "bitrate": {
+        "name": "ビットレート（kbps）",
+        "tooltip": "MP3のビットレート（kbps）。WAV/FLACでは無視します。"
+      },
+      "bit_depth": {
+        "name": "ビット深度",
+        "tooltip": "WAV/FLACのビット深度。MP3では無視します。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "音声"
+      }
+    }
+  },
+  "IrodoriTTSGenerate": {
+    "display_name": "Irodori TTS 音声生成",
+    "description": "models.jsonに登録した互換Irodori-TTSモデルによる日本語音声生成。参照音声の書き起こしは不要です。",
+    "inputs": {
+      "mode": {
+        "name": "生成モード"
+      },
+      "text": {
+        "name": "読み上げテキスト"
+      },
+      "seed": {
+        "name": "シード"
+      },
+      "steps": {
+        "name": "ステップ数"
+      },
+      "cfg_text": {
+        "name": "テキストガイダンス"
+      },
+      "cfg_reference": {
+        "name": "参照音声ガイダンス"
+      },
+      "cfg_caption": {
+        "name": "キャプションガイダンス"
+      },
+      "seconds": {
+        "name": "長さ（秒）",
+        "tooltip": "0で長さを自動予測。指定時は秒数を固定します。"
+      },
+      "duration_scale": {
+        "name": "長さの倍率"
+      },
+      "device": {
+        "name": "デバイス"
+      },
+      "precision": {
+        "name": "計算精度",
+        "tooltip": "通常版の計算精度。量子化モデルではこの値にかかわらずBF16を使用します。"
+      },
+      "codec_device": {
+        "name": "コーデックのデバイス"
+      },
+      "allow_download": {
+        "name": "ダウンロードを許可",
+        "tooltip": "不足している公式モデルのみ初回実行時に取得します。"
+      },
+      "caption": {
+        "name": "キャプション",
+        "tooltip": "text_caption / text_caption_referenceで使う声の表情・話し方の説明。"
+      },
+      "reference_audio": {
+        "name": "参照音声",
+        "tooltip": "参照音声ローダーの1件または複数件を接続。標準Load Audioの1件も接続できます。"
+      },
+      "unload_after_generate": {
+        "name": "生成後に解放",
+        "tooltip": "falseでモデルを保持して次回再利用。trueで生成後に解放します。"
+      },
+      "model_name": {
+        "name": "モデル",
+        "tooltip": "models.jsonのモデル一覧から選択。設定追加後はComfyUIを再起動してください。量子化版はCUDA・BF16計算を使用。モデル変更時は再ロードします。"
+      },
+      "dynamic_vram": {
+        "name": "Dynamic VRAM",
+        "tooltip": "ComfyUIのDynamic VRAMが有効な場合、TTSモデルの重みを必要に応じて転送・退避します。無効時やCPUでは従来方式。codec_deviceの設定は別途適用します。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "音声"
+      }
+    }
+  },
+  "IrodoriTTSLoadReferenceAudios": {
+    "display_name": "Irodori TTS 参照音声読み込み",
+    "description": "input/irodori_references内から1件または複数の音声を選択します。各音声のサンプルレート・長さを保ったまま同じ入力端子へ渡します。",
+    "inputs": {
+      "files": {
+        "name": "ファイル",
+        "tooltip": "input/irodori_references内から選択。参照順序の↑↓で並べ替え、上から順に使用します。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "参照音声"
+      }
+    }
+  }
+}

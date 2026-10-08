@@ -1,0 +1,7 @@
+# Keep the existing ComfyUI PyTorch installation. Only inference dependencies.
+dacvae @ git+https://github.com/facebookresearch/dacvae.git@414c20785fc3a28373073ea8ef7a1316eeeaca6e
+transformers>=5.3.0,<6
+huggingface-hub>=0.34.0
+safetensors>=0.7.0
+soundfile>=0.12.0
+sentencepiece>=0.2.0
