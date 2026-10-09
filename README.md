@@ -27,7 +27,7 @@ ComfyUI V3 API（`ComfyExtension` / `io.ComfyNode` / `define_schema`）形式で
 
 - Python 3.10以上で動作するComfyUI
 - V3 API（`comfy_api.latest`）の`MultiCombo`・`MultiType`に対応するComfyUI
-- Git（依存パッケージの取得に使用）
+- Git（リポジトリと依存パッケージの取得に使用）
 - GPUで生成する場合はCUDA対応のPyTorchとNVIDIA GPU。通常版はCPUでも実行できますが、生成に時間がかかります。
 - 量子化版を使用する場合は、後述する量子化方式ごとのGPU要件を満たす環境
 
@@ -35,7 +35,16 @@ ComfyUI V3 API（`ComfyExtension` / `io.ComfyNode` / `define_schema`）形式で
 
 ### カスタムノードと依存パッケージの配置
 
-1. このリポジトリを取得し、`ComfyUI/custom_nodes/ComfyUI-IrodoriTTS/`に配置します。ダウンロードしたZIPを展開する場合も、同ディレクトリ直下に`__init__.py`と`requirements.txt`がある構成にしてください。
+1. ComfyUI本体のディレクトリから以下を実行し、`custom_nodes/`へリポジトリを取得します。
+
+   ```sh
+   cd custom_nodes
+   git clone https://github.com/hybskgks28275/ComfyUI-IrodoriTTS.git
+   cd ComfyUI-IrodoriTTS
+   ```
+
+   ダウンロードしたZIPを展開する場合は、`ComfyUI/custom_nodes/ComfyUI-IrodoriTTS/`直下に`__init__.py`と`requirements.txt`がある構成にしてください。
+
 2. **ComfyUIが使用しているPython環境**で、カスタムノードのディレクトリから以下を実行します。venvを使用している場合は、その環境を有効にしてから実行してください。
 
 ```sh
