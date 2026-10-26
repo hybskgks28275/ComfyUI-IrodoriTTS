@@ -276,6 +276,7 @@ def load_lora_adapter(
     is_trainable: bool,
     adapter_name: str = "default",
     torch_device: str | None = None,
+    config: Any = None,
 ) -> torch.nn.Module:
     _, peft_model_cls, _ = _require_peft()
     if isinstance(model, peft_model_cls):
@@ -294,6 +295,7 @@ def load_lora_adapter(
         adapter_name=adapter_name,
         is_trainable=is_trainable,
         torch_device=torch_device,
+        config=config,
     )
 
 

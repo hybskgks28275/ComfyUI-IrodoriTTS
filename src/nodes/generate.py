@@ -13,23 +13,29 @@ import folder_paths
 from comfy_api.latest import io
 
 from ..modules.models import DEFAULT_MODEL, MODEL_SPECS, resolve_models
+from ..modules.adapters import (
+    NONE, list_assets, resolve_asset, asset_fingerprint,
+    validate_lora_strength, require_lora_support, apply_lora,
+)
 from .reference_audio import ReferenceAudios
 
-MODES = ["text", "text_caption", "text_reference", "text_caption_reference"]
+MODES = ["text", "text_caption", "text_reference", "text_caption_reference", "text_speaker", "text_caption_speaker"]
 LOGGER = logging.getLogger(__name__)
 _RUNTIME_LOCK = threading.Lock()
 _RUNTIME = None
 _RUNTIME_KEY = None
+_RUNTIME_LORA_KEY = None
 _RUNTIME_MANAGER = None
 
 
 def _clear_runtime_cache():
-    global _RUNTIME, _RUNTIME_KEY, _RUNTIME_MANAGER
+    global _RUNTIME, _RUNTIME_KEY, _RUNTIME_MANAGER, _RUNTIME_LORA_KEY
     if _RUNTIME_MANAGER is not None:
         _RUNTIME_MANAGER.close()
         _RUNTIME_MANAGER = None
     _RUNTIME = None
     _RUNTIME_KEY = None
+    _RUNTIME_LORA_KEY = None
     gc.collect()
     mm.soft_empty_cache()
 
@@ -104,6 +110,14 @@ class IrodoriTTSGenerate(io.ComfyNode):
                                tooltip="Choose a model from models.json. Restart ComfyUI after editing the list. Quantized models use CUDA and BF16. Changing the model reloads it."),
                 io.Boolean.Input("dynamic_vram", optional=True, default=True,
                                  tooltip="Offload TTS model weights as needed when ComfyUI Dynamic VRAM is enabled. Otherwise, or on CPU, use standard loading. Codec device is configured separately."),
+                io.Combo.Input("speaker_embedding", options=list_assets("speakers"), optional=True, default=NONE,
+                               tooltip="Speaker Inversion file under models/irodori_tts/speakers. Used only in text_speaker and text_caption_speaker modes."),
+                io.Combo.Input("speaker_uncond_mode", options=["mask", "noise"], optional=True, default="mask",
+                               tooltip="Unconditional speaker guidance method for Speaker Inversion."),
+                io.Combo.Input("lora_adapter", options=list_assets("loras"), optional=True, default=NONE,
+                               tooltip="PEFT adapter folder under models/irodori_tts/loras. Select none to use the base model."),
+                io.Float.Input("lora_strength", optional=True, default=1.0, min=0.0, max=2.0, step=0.05,
+                               tooltip="LoRA scale multiplier. 1 uses the trained adapter scale. Changing the adapter or strength reloads the model."),
             ],
             outputs=[io.Audio.Output("audio")],
         )
@@ -112,8 +126,9 @@ class IrodoriTTSGenerate(io.ComfyNode):
     def execute(cls, mode, text, seed, steps, cfg_text, cfg_reference, cfg_caption,
                 seconds, duration_scale, device, precision, codec_device, allow_download,
                 caption="", reference_audio=None, unload_after_generate=False,
-                model_name=DEFAULT_MODEL, dynamic_vram=True) -> io.NodeOutput:
-        global _RUNTIME, _RUNTIME_KEY, _RUNTIME_MANAGER
+                model_name=DEFAULT_MODEL, dynamic_vram=True, speaker_embedding=NONE,
+                speaker_uncond_mode="mask", lora_adapter=NONE, lora_strength=1.0) -> io.NodeOutput:
+        global _RUNTIME, _RUNTIME_KEY, _RUNTIME_MANAGER, _RUNTIME_LORA_KEY
         if model_name not in MODEL_SPECS:
             raise ValueError(f"Unsupported model_name: {model_name}")
         if mode not in MODES:
@@ -121,7 +136,22 @@ class IrodoriTTSGenerate(io.ComfyNode):
         if not text.strip():
             raise ValueError("Enter text to synthesize.")
         use_reference = mode in {"text_reference", "text_caption_reference"}
-        use_caption = mode in {"text_caption", "text_caption_reference"}
+        use_speaker = mode in {"text_speaker", "text_caption_speaker"}
+        use_caption = mode in {"text_caption", "text_caption_reference", "text_caption_speaker"}
+        if speaker_uncond_mode not in {"mask", "noise"}:
+            raise ValueError("speaker_uncond_mode must be mask or noise.")
+        speaker_path = resolve_asset("speakers", speaker_embedding) if use_speaker else None
+        if use_speaker and speaker_path is None:
+            raise ValueError("This mode requires a speaker_embedding.")
+        if use_speaker and reference_audio is not None:
+            raise ValueError("Speaker Inversion cannot be combined with reference_audio. Disconnect reference_audio.")
+        validate_lora_strength(lora_strength)
+        lora_path = resolve_asset("loras", lora_adapter)
+        if lora_strength == 0:
+            lora_path = None
+        if lora_path:
+            require_lora_support()
+        lora_stamp = asset_fingerprint(lora_path)
         references = []
         if use_reference:
             if isinstance(reference_audio, dict):
@@ -173,7 +203,8 @@ class IrodoriTTSGenerate(io.ComfyNode):
                         comfy_dynamic_vram=use_dynamic)
                     if not use_dynamic:
                         mm.unload_all_models()
-                    if _RUNTIME is None or _RUNTIME_KEY != key:
+                    lora_key = (lora_stamp, lora_strength if lora_path else None)
+                    if _RUNTIME is None or _RUNTIME_KEY != key or _RUNTIME_LORA_KEY != lora_key:
                         # Free the previous model before allocating its replacement.
                         _clear_runtime_cache()
                         LOGGER.info("[Irodori TTS] Loading %s (%s / %s)", model_name, device, precision)
@@ -181,11 +212,18 @@ class IrodoriTTSGenerate(io.ComfyNode):
                         # tensor reconstruction/transfer requires normal tensors;
                         # synthesis enters its own inference_mode afterwards.
                         with torch.inference_mode(False), torch.no_grad():
-                            _RUNTIME = InferenceRuntime.from_key(key)
+                            runtime_class = InferenceRuntime
+                            if lora_path:
+                                from ..modules.personalized_runtime import PersonalizedRuntime
+                                runtime_class = PersonalizedRuntime
+                            _RUNTIME = runtime_class.from_key(key)
+                            if lora_path:
+                                apply_lora(_RUNTIME, lora_path, lora_strength)
                             if use_dynamic:
                                 from ..modules.dynamic_vram import DynamicModel
                                 _RUNTIME_MANAGER = DynamicModel(_RUNTIME.model, device)
                         _RUNTIME_KEY = key
+                        _RUNTIME_LORA_KEY = lora_key
                     else:
                         LOGGER.info("[Irodori TTS] Reusing loaded %s (%s / %s)", model_name, device, precision)
                     progress.update_absolute(1)
@@ -204,7 +242,9 @@ class IrodoriTTSGenerate(io.ComfyNode):
                     result = _RUNTIME.synthesize(SamplingRequest(
                         text=text, caption=caption if use_caption else None,
                         ref_wavs=reference_paths or None,
-                        no_ref=not use_reference, seed=seed, num_steps=steps,
+                        ref_embed=str(speaker_path) if speaker_path else None,
+                        speaker_uncond_mode=speaker_uncond_mode,
+                        no_ref=not (use_reference or use_speaker), seed=seed, num_steps=steps,
                         cfg_scale_text=cfg_text, cfg_scale_speaker=cfg_reference,
                         cfg_scale_caption=cfg_caption, seconds=seconds or None,
                         duration_scale=duration_scale,
@@ -219,3 +259,8 @@ class IrodoriTTSGenerate(io.ComfyNode):
                 if unload_after_generate or not succeeded:
                     # Clear the entire runtime, including codec and watermark models.
                     _clear_runtime_cache()
+
+    @classmethod
+    def fingerprint_inputs(cls, mode="text", speaker_embedding=NONE, lora_adapter=NONE, **kwargs):
+        speaker = resolve_asset("speakers", speaker_embedding) if mode in {"text_speaker", "text_caption_speaker"} else None
+        return (asset_fingerprint(speaker), asset_fingerprint(resolve_asset("loras", lora_adapter)))

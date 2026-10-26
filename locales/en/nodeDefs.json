@@ -97,6 +97,22 @@
       "dynamic_vram": {
         "name": "Dynamic VRAM",
         "tooltip": "Offload TTS model weights as needed when ComfyUI Dynamic VRAM is enabled. Otherwise, or on CPU, use standard loading. Codec device is configured separately."
+      },
+      "speaker_embedding": {
+        "name": "Speaker embedding",
+        "tooltip": "Speaker Inversion file under models/irodori_tts/speakers. Used only in text_speaker and text_caption_speaker modes."
+      },
+      "speaker_uncond_mode": {
+        "name": "Speaker unconditional mode",
+        "tooltip": "Unconditional speaker guidance method for Speaker Inversion."
+      },
+      "lora_adapter": {
+        "name": "LoRA adapter",
+        "tooltip": "PEFT adapter folder under models/irodori_tts/loras. Select none to use the base model."
+      },
+      "lora_strength": {
+        "name": "LoRA strength",
+        "tooltip": "LoRA scale multiplier. 1 uses the trained adapter scale. Changing the adapter or strength reloads the model."
       }
     },
     "outputs": {
