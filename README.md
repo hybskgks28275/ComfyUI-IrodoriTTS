@@ -9,9 +9,11 @@ ComfyUI V3 API（`ComfyExtension` / `io.ComfyNode` / `define_schema`）形式で
 | `text_caption` | 読み上げテキスト＋キャプション（参照音声不要） |
 | `text_reference` | 読み上げテキスト＋参照音声 |
 | `text_caption_reference` | 読み上げテキスト＋キャプション＋参照音声 |
+| `text_speaker` | 読み上げテキスト＋Speaker Inversion |
+| `text_caption_speaker` | 読み上げテキスト＋キャプション＋Speaker Inversion |
 
 日本語の音声を48 kHz・モノラルのComfyUI `AUDIO`として出力します。
-参照音声の書き起こしは不要です。学習、LoRA、Speaker Inversion、モデルを量子化する処理、旧モデル用のノードはありません。
+参照音声の書き起こしは不要です。学習済みのSpeaker InversionとLoRAの推論時の適用に対応します。学習とモデルを量子化する処理は含みません。
 
 ## 表示言語
 
@@ -57,12 +59,20 @@ python -m pip install -r requirements.txt
 python -m pip install -r requirements-quantized.txt
 ```
 
+LoRAを使用する場合は、追加で以下を実行します。Speaker Inversionだけを使用する場合は不要です。
+
+```sh
+python -m pip install -r requirements-lora.txt
+```
+
 Windowsポータブル版では、ポータブル版のルート（`python_embeded/`と`ComfyUI/`があるディレクトリ）から同梱Pythonを指定できます。
 
 ```powershell
 ./python_embeded/python.exe -m pip install -r ./ComfyUI/custom_nodes/ComfyUI-IrodoriTTS/requirements.txt
 # 量子化モデルを使用する場合のみ
 ./python_embeded/python.exe -m pip install -r ./ComfyUI/custom_nodes/ComfyUI-IrodoriTTS/requirements-quantized.txt
+# LoRAを使用する場合のみ
+./python_embeded/python.exe -m pip install -r ./ComfyUI/custom_nodes/ComfyUI-IrodoriTTS/requirements-lora.txt
 ```
 
 インストール後はComfyUIを再起動し、ブラウザーを再読み込みしてください。
@@ -82,6 +92,8 @@ Generateノードでは`text` → **Show emojis（絵文字を表示）** → `m
 | `06_text_caption.json` | テキスト＋キャプション（音声不要） |
 | `02_text_reference.json` | テキスト＋参照音声（1件／複数件） |
 | `03_text_caption_reference.json` | テキスト＋キャプション＋参照音声（1件／複数件） |
+| `07_text_speaker.json` | テキスト＋Speaker Inversion（埋め込みファイルを選択） |
+| `08_text_caption_speaker.json` | テキスト＋キャプション＋Speaker Inversion（埋め込みファイルを選択） |
 
 `04_multi_reference.json`／`05_multi_caption_reference.json`は複数参照音声用の例です。02／03と同じ統一入力を使います。
 
@@ -110,7 +122,7 @@ Nodes 2.0では **Select reference audio (multiple files allowed)（参照音声
 
 ノード検索名は **Irodori TTS Generate** 、カテゴリは`audio/Irodori TTS`です。
 `model_name`で`Irodori-TTS-v4.1-Small`／`Irodori-TTS-v4-Large`または各量子化版を選択します。
-既定のモデルは`Irodori-TTS-v4.1-Small`です。どちらのモデルも4つの生成モードに対応します。
+既定のモデルは`Irodori-TTS-v4.1-Small`です。どちらのモデルも6つの生成モードに対応します。
 Largeはモデルファイル約13.2 GB、BF16の重みだけで約6.1 GiBを使用します。
 VRAMを節約する場合は、対応GPUで`precision=bf16`・`codec_device=cpu`を使用できます。FP32では重みだけで約12.3 GiBとなり、
 VRAMに収まらない場合はDynamic VRAMによる転送・退避が必要です。
@@ -131,13 +143,35 @@ Smallも同様に`Irodori-TTS-v4.1-Small-Quantized/種類`を選べます。
 | `float8-dynamic` | FP8重みと動的FP8活性値 | Ada以降（CC 8.9以上） |
 
 量子化方式のGPU要件を満たさない場合やCPUを指定した場合は、モデル取得前に理由を表示します。
-量子化版でも4モード・複数参照・順序指定・モデル再利用・任意アンロードを使用できます。
+量子化版でも6モード・複数参照・順序指定・モデル再利用・任意アンロードを使用できます。
 モデルの種類や量子化方式を変えると、保持中のモデルを解放して切り替えます。
 量子化方式による生成速度はGPUや実行環境によって異なります。量子化版を使用する場合は、サンプルの`model_name`を使用したい量子化モデルへ変更してください。FP8の実生成は未検証です。
 
 以下は通常版と共通の入力条件です。
 `text`と`text_caption`では参照音声を使用しません。`text`と`text_reference`ではcaptionを使用しません。
 参照モードで音声未接続、またはキャプションを使うモードでcaptionが空の場合は入力エラーになります。
+
+### Speaker InversionとLoRA
+
+学習済みファイルを、次のように配置してください。選択肢にはサブフォルダーも表示されます。追加したファイルを選ぶにはComfyUIのノード定義を更新するか、ComfyUIを再起動してブラウザーを再読み込みしてください。
+
+```text
+ComfyUI/models/irodori_tts/
+  speakers/
+    MyVoice/checkpoint_final.speaker.safetensors
+  loras/
+    MyAdapter/
+      adapter_config.json
+      adapter_model.safetensors
+```
+
+Speaker Inversionを使う場合は`mode=text_speaker`または`text_caption_speaker`とし、`speaker_embedding`でファイルを選択します。後者では`caption`も入力します。参照音声の代わりに話者埋め込みを使用するため、`reference_audio`は接続しないでください。`cfg_reference`で話者条件の誘導強度を調整できます。`speaker_uncond_mode`は既定の`mask`と`noise`から選択でき、話者条件のない側のCFG計算方式を指定します。その他のモードでは`speaker_embedding`を使用しません。
+
+LoRAはすべてのモードで`lora_adapter`から1つ選択でき、Speaker Inversionとの併用も可能です。公式Irodori-TTSで出力したPEFT形式のフォルダーを使用します。`lora_strength`は0～2で指定し、1が学習時のスケール、0ではアダプター全体を適用しません。`none`を選択した場合もベースモデルを使用します。重みの形式は`adapter_model.safetensors`に対応します。
+
+どちらも学習に使用したベースモデルと対応するものを選んでください。Small用をLargeへ適用するなど、構造が異なる組み合わせには対応しません。同じ構造でも異なるベースモデルでの品質は保証されません。
+
+LoRAは重みにマージせずに適用するため、通常版と公式量子化版の両方で使用できます。Dynamic VRAMではLoRAを含む重みを管理します。LoRAの選択・強度・ファイル更新時はモデルを再ロードし、同じ設定では保持したモデルを再利用します。Speaker Inversionは生成ごとに読み込むため、埋め込みの切り替えでベースモデルを再ロードしません。どちらもメモリ解放ボタンと生成後のアンロードに対応します。
 
 ## 主な設定
 
@@ -169,7 +203,7 @@ Smallも同様に`Irodori-TTS-v4.1-Small-Quantized/種類`を選べます。
 公式モデルの参照上限は120秒です。参照の短さやcaptionとの矛盾は音声品質に影響します。
 
 本ノードはデフォルトでTTSモデルとコーデックを保持し、
-同じmodel_name・device・precision・codec_device・実際のDynamic VRAM使用状態での次回生成に再利用します。text・seed・mode・参照音声・captionを変えてもモデルの再ロードは不要です。
+同じmodel_name・device・precision・codec_device・実際のDynamic VRAM使用状態・LoRA設定での次回生成に再利用します。text・seed・mode・参照音声・caption・話者埋め込みを変えてもモデルの再ロードは不要です。
 キャッシュはノード間で共有する1セットだけで、モデル・デバイス・精度を変えた場合は古いモデルを解放してからロードします。
 `unload_after_generate=true`では保持済みモデルも利用したうえで生成後に解放します。推論エラー・キャンセル時もキャッシュを破棄します。
 
@@ -257,6 +291,14 @@ python tests/smoke_dynamic_vram.py --comfy-root "$comfy_root" --model-name Irodo
 スモークテストでは4モードを実行し、48 kHzの非無音・有限値のAUDIO出力を検証します。
 参照テストは最初の合成音声を24 kHz・ステレオ化して使用します。
 Dynamic VRAM用テストでは、CPU準備・GPU生成・重みの退避・モデルの再利用・生成後の解放を確認します。
+
+Speaker Inversion・LoRAの構造的な動作確認には、次を実行できます。Small通常版の重みが必要です。`--quantized`を付ける場合はSmallの`int8-weight-only`重みも配置してください。
+
+```sh
+python tests/smoke_personalization.py --comfy-root "<ComfyUI本体のパス>" --output-dir ./work/personalization
+```
+
+このテストは合成した話者埋め込みとLoRAを出力先フォルダー内に作成し、生成・キャッシュ再利用・重み退避後の再生成・解放を確認します。学習済み話者の声質再現を評価するものではありません。対応するCUDA環境と`requirements-lora.txt`の依存パッケージが必要です。
 
 ## 出典・ライセンス
 

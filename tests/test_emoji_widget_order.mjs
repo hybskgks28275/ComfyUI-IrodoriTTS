@@ -3,9 +3,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 const source = readFileSync(new URL('../web/emoji_palette.js', import.meta.url), 'utf8');
 const reorder = new Function('paletteWidget', 'textWidget', source.slice(source.indexOf('            paletteWidget.serialize = false;'), source.indexOf('            toggle.addEventListener')));
-const names = ['mode','text','seed','control_after_generate','steps','cfg_text','cfg_reference','cfg_caption','seconds','duration_scale','device','precision','codec_device','allow_download','caption','unload_after_generate','model_name','dynamic_vram'];
+const names = ['mode','text','seed','control_after_generate','steps','cfg_text','cfg_reference','cfg_caption','seconds','duration_scale','device','precision','codec_device','allow_download','caption','unload_after_generate','model_name','dynamic_vram','speaker_embedding','speaker_uncond_mode','lora_adapter','lora_strength'];
 function node() {
-    const values = ['text','',0,'fixed',40,3,5,3,0,1,'auto','fp32','cpu',true,'',false,'Irodori-TTS-v4.1-Small',true];
+    const values = ['text','',0,'fixed',40,3,5,3,0,1,'auto','fp32','cpu',true,'',false,'Irodori-TTS-v4.1-Small',true,'none','mask','none',1];
     const n = {
         widgets: names.map((name,i)=>({name,value:values[i]})),
         configure(info) { this.widgets.filter(w=>w.serialize!==false).forEach((w,i)=>{w.value=info.widgets_values[i]}); },

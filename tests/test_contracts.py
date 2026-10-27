@@ -301,13 +301,13 @@ class ModeTests(unittest.TestCase):
                 nodes.IrodoriTTSGenerate.execute(**(self.inputs | {"mode": mode}))
 
     def test_model_selector_is_appended_and_old_workflows_default_to_small(self):
-        selector = nodes.IrodoriTTSGenerate.define_schema().inputs[-2]
+        selector = next(item for item in nodes.IrodoriTTSGenerate.define_schema().inputs if item.id == "model_name")
         self.assertEqual(selector.id, "model_name")
         self.assertTrue(selector.optional)
         self.assertEqual(selector.default, "Irodori-TTS-v4.1-Small")
         self.assertEqual(selector.options[:2], ["Irodori-TTS-v4.1-Small", "Irodori-TTS-v4-Large"])
         self.assertEqual(len(selector.options), 12)
-        dynamic = nodes.IrodoriTTSGenerate.define_schema().inputs[-1]
+        dynamic = next(item for item in nodes.IrodoriTTSGenerate.define_schema().inputs if item.id == "dynamic_vram")
         self.assertEqual(dynamic.id, "dynamic_vram")
         self.assertTrue(dynamic.default)
 
@@ -425,6 +425,62 @@ class RuntimeCacheTests(unittest.TestCase):
         self.generate(seed=2, text="こんばんは。", steps=20)
         self.assertEqual(len(self.references), 1)
         self.assertIsNotNone(self.references[0]())
+
+    def test_speaker_modes_forward_embedding_and_reuse_model(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(folders, "models_dir", tmp):
+            root = Path(tmp) / "irodori_tts/speakers"
+            root.mkdir(parents=True)
+            (root / "first.speaker.safetensors").touch()
+            (root / "second.speaker.safetensors").touch()
+            self.generate(mode="text_speaker", speaker_embedding="first.speaker.safetensors")
+            self.assertFalse(self.requests[-1].no_ref)
+            self.assertEqual(self.requests[-1].ref_embed, str(root / "first.speaker.safetensors"))
+            self.assertIsNone(self.requests[-1].ref_wavs)
+            self.generate(mode="text_caption_speaker", caption="Calm", speaker_embedding="second.speaker.safetensors",
+                          speaker_uncond_mode="noise")
+            self.assertEqual(self.requests[-1].caption, "Calm")
+            self.assertEqual(self.requests[-1].speaker_uncond_mode, "noise")
+            self.assertEqual(len(self.references), 1)
+            with self.assertRaisesRegex(ValueError, "cannot be combined"):
+                self.generate(mode="text_speaker", speaker_embedding="first.speaker.safetensors", reference_audio={})
+
+    def test_lora_switch_strength_update_disable_and_failure_clear_cache(self):
+        module = types.ModuleType(f"{PACKAGE}.modules.personalized_runtime")
+        module.PersonalizedRuntime = sys.modules[f"{PACKAGE}.modules.vendor.irodori_tts.inference_runtime"].InferenceRuntime
+        calls = []
+        fail = False
+        def apply(runtime, path, strength):
+            if fail:
+                raise RuntimeError("Invalid adapter")
+            calls.append((path, strength))
+        with tempfile.TemporaryDirectory() as tmp, patch.object(folders, "models_dir", tmp), \
+             patch.dict(sys.modules, {module.__name__: module}), patch.object(nodes, "apply_lora", new=apply), \
+             patch.object(nodes, "require_lora_support"):
+            root = Path(tmp) / "irodori_tts/loras/voice"
+            root.mkdir(parents=True)
+            (root / "adapter_config.json").write_text('{}')
+            weights = root / "adapter_model.safetensors"
+            weights.touch()
+            self.generate(lora_adapter="voice")
+            self.generate(lora_adapter="voice", text="Changed")
+            self.assertEqual(len(self.references), 1)
+            self.assertEqual(len(calls), 1)
+            self.generate(lora_adapter="voice", lora_strength=0.5)
+            self.assertEqual(len(self.references), 2)
+            weights.write_bytes(b"updated")
+            self.generate(lora_adapter="voice", lora_strength=0.5)
+            self.assertEqual(len(self.references), 3)
+            self.generate()
+            self.assertEqual(len(self.references), 4)
+            self.assertEqual(len(calls), 3)
+            self.generate(lora_adapter="voice", lora_strength=0)
+            self.assertEqual(len(self.references), 4)
+            self.assertEqual(len(calls), 3)
+            fail = True
+            with self.assertRaisesRegex(RuntimeError, "Invalid adapter"):
+                self.generate(lora_adapter="voice")
+            self.assertIsNone(nodes._RUNTIME)
+            self.assertIsNone(nodes._RUNTIME_LORA_KEY)
 
     def test_load_disables_outer_inference_mode_and_restores_it(self):
         with torch.inference_mode():

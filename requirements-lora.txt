@@ -1,0 +1,2 @@
+# Optional inference dependency for PEFT LoRA adapters.
+peft>=0.19.1,<0.20

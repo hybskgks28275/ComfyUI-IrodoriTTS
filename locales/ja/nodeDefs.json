@@ -97,6 +97,22 @@
       "dynamic_vram": {
         "name": "Dynamic VRAM",
         "tooltip": "ComfyUIのDynamic VRAMが有効な場合、TTSモデルの重みを必要に応じて転送・退避します。無効時やCPUでは従来方式。codec_deviceの設定は別途適用します。"
+      },
+      "speaker_embedding": {
+        "name": "話者埋め込み",
+        "tooltip": "models/irodori_tts/speakers内のSpeaker Inversionファイル。text_speaker・text_caption_speakerモードで使用します。"
+      },
+      "speaker_uncond_mode": {
+        "name": "話者の無条件化方式",
+        "tooltip": "Speaker Inversionの話者条件を外した側のCFG計算方式です。"
+      },
+      "lora_adapter": {
+        "name": "LoRAアダプター",
+        "tooltip": "models/irodori_tts/loras内のPEFTアダプターフォルダー。noneでベースモデルを使用します。"
+      },
+      "lora_strength": {
+        "name": "LoRA適用強度",
+        "tooltip": "LoRAスケールの倍率。1が学習時のスケールです。アダプターや強度を変えるとモデルを再ロードします。"
       }
     },
     "outputs": {

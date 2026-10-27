@@ -8,10 +8,14 @@ MIT license: `src/modules/vendor/IRODORI_LICENSE`.
 Training scripts, dataset, optimizer, training progress, and Gradio helpers are omitted.
 Some internal classes/functions for LoRA, speaker inversion, quantization conversion, and older
 architectures remain because the official inference modules import them. The custom
-node exposes none of these features. It resolves v4.1-Small and v4-Large checkpoints,
+node exposes trained LoRA adapters and Speaker Inversion embeddings for inference,
+but no training or quantization conversion. It resolves v4.1-Small and v4-Large checkpoints,
 including their official torchao quantized variants for inference.
 
 Local modifications:
+
+- `lora.py`: optional PEFT configuration argument for standalone torchao Linear
+  layers. The integration uses an unmerged LoRA forward and preserves packed weights.
 
 - `rf.py`: optional sampling step callback for ComfyUI progress/cancellation.
 - `inference_runtime.py`: forwards that callback to the sampler.
@@ -43,7 +47,8 @@ Pinned model revisions:
 
 The Small/ModernBERT and Large/T5Gemma2 inference paths use Transformers 5.3.0. The upstream
 application requirements also cover training and other backbones; they are not
-installed wholesale by this node. Neither PEFT nor Gradio is required.
+installed wholesale by this node. PEFT 0.19.x (Apache-2.0) is optional for LoRA
+inference, listed in `requirements-lora.txt`; Gradio is not required.
 The official quantized checkpoints additionally require torchao 0.16.x
 ([pytorch/ao](https://github.com/pytorch/ao), BSD-3-Clause), listed separately in
 `requirements-quantized.txt`; ordinary models do not require this optional dependency.
