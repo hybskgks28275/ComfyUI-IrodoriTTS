@@ -7,6 +7,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--comfy-root", required=True)
@@ -91,9 +92,22 @@ try:
     del original, manager
     run("lora_strength", lora_adapter="test", lora_strength=.5)
     run("lora_without_speaker", mode="text", lora_adapter="test", lora_strength=.5)
-    run("reference_lora", mode="text_reference", lora_adapter="test", lora_strength=.5, reference_audio=first)
-    run("caption_reference_lora", mode="text_caption_reference", caption="穏やかな声。",
-        lora_adapter="test", lora_strength=.5, reference_audio=first)
+    with patch.object(generate._RUNTIME.codec, "encode_waveform", wraps=generate._RUNTIME.codec.encode_waveform) as encode:
+        run("reference_lora", mode="text_reference", lora_adapter="test", lora_strength=.5, reference_audio=first)
+        run("caption_reference_lora", mode="text_caption_reference", caption="穏やかな声。",
+            lora_adapter="test", lora_strength=.5, reference_audio=first)
+        assert encode.call_count == 1, "Reference WAV cache did not survive temporary path changes"
+    from irodori_personal_smoke.src.modules.vendor.irodori_tts.inference_runtime import SamplingRequest
+    callbacks = []
+    batch = generate._RUNTIME.synthesize_batch([
+        SamplingRequest(text="こんにちは。", no_ref=True, seconds=1., num_steps=4, seed=42, trim_tail=False),
+        SamplingRequest(text="送料無料です。", no_ref=True, seconds=1.4, num_steps=4, seed=43, trim_tail=False),
+    ], step_callback=lambda step, total: callbacks.append((step, total)))
+    assert len(batch) == 2 and batch[0].audio.shape[-1] < batch[1].audio.shape[-1]
+    assert all(torch.isfinite(result.audio).all() for result in batch)
+    assert callbacks == [(step, 4) for step in range(4)]
+    results.append("cross_request_batch")
+    assert generate._RUNTIME.tokenizer.rare_token_splitter is not None
     run("base_without_speaker", mode="text", unload_after_generate=True)
     assert generate._RUNTIME is None and generate._RUNTIME_MANAGER is None
     (args.output_dir / "results.json").write_text(json.dumps({"model": model, "passed": results}, indent=2))
