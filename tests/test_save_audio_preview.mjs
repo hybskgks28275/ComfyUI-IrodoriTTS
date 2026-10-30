@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
+import { installNativeAudioLayout } from '../web/native_audio_layout.js';
 
 const source = readFileSync(new URL('../web/save_audio_preview.js', import.meta.url), 'utf8')
     .replace(/^import .*;\r?\n/gm, '');
@@ -18,6 +19,7 @@ function fixture() {
                 getAttribute(k) { return attributes.get(k) ?? null; },
                 removeAttribute(k) { attributes.delete(k); },
                 addEventListener(k, fn) { this.listeners[k] = fn; },
+                removeEventListener(k) { delete this.listeners[k]; },
                 pause() { this.pauses++; }, load() { this.loads++; },
                 set src(v) { attributes.set('src', v); }, get src() { return attributes.get('src'); },
             };
@@ -26,6 +28,7 @@ function fixture() {
         },
     };
     vm.runInNewContext(source, {
+        installNativeAudioLayout,
         app: { registerExtension(value) { extension = value; } },
         api: { apiURL: value => value }, document, URL, URLSearchParams,
         window: { location: { href: 'http://localhost:8188/' } },

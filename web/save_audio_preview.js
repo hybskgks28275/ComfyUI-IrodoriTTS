@@ -1,6 +1,7 @@
 import { t, locale, watchLocale } from "./i18n.js";
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
+import { installNativeAudioLayout } from "./native_audio_layout.js";
 
 app.registerExtension({
     name: "IrodoriTTS.SaveAudioPreview",
@@ -31,7 +32,9 @@ app.registerExtension({
                 } catch { /* Keep non-URL sources comparable as strings. */ }
                 return source;
             };
+            let layout;
             const setSource = (value) => {
+                layout?.refresh();
                 const source = typeof value === "string" ? value : "";
                 // Core cached-output restoration and onExecuted can both deliver
                 // this file, with different cache-busting query parameters.
@@ -55,6 +58,7 @@ app.registerExtension({
             widget.computeLayoutSize = (...args) => ({
                 ...computeLayoutSize?.(...args), minWidth: 300, minHeight: 66, maxHeight: 66,
             });
+            layout = installNativeAudioLayout(this, widget);
             const executed = this.onExecuted;
             this.onExecuted = function (message) {
                 executed?.apply(this, arguments);
@@ -69,6 +73,7 @@ app.registerExtension({
             };
             const removed = this.onRemoved;
             this.onRemoved = function () {
+                layout.dispose();
                 audio.pause();
                 audio.removeAttribute("src");
                 audio.load();
