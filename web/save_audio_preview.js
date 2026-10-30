@@ -16,8 +16,8 @@ app.registerExtension({
             audio.setAttribute("aria-label", t("Preview saved audio", "保存音声の試聴"));
             // Nodes 2.0 can measure DOM widgets in a shrink-to-fit flex host.
             // A percentage-only wrapper has zero intrinsic content width there.
-            // Mount the native element directly and give layout a stable minimum.
-            audio.style.cssText = "display:block;box-sizing:border-box;width:100%;min-width:300px;height:54px;margin:6px 0;flex:0 0 54px;align-self:stretch;";
+            // Mount the native element directly; CSS must still let it fit its host.
+            audio.style.cssText = "display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;height:54px;margin:6px 0;flex:0 0 54px;align-self:stretch;";
             audio.addEventListener("pointerdown", (event) => event.stopPropagation());
             audio.addEventListener("keydown", (event) => event.stopPropagation());
             const sourceIdentity = (source) => {

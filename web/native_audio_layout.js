@@ -29,18 +29,31 @@ export function installNativeAudioLayout(node, widget, env = globalThis) {
         // or any clipping used to hide widgets behind other nodes.
         if (row) {
             setStyle(host, "width", "100%");
-            setStyle(host, "minWidth", "300px");
+            setStyle(host, "minWidth", "0px");
+            setStyle(host, "maxWidth", "100%");
+            setStyle(host, "boxSizing", "border-box");
+            setStyle(host, "contain", "inline-size");
             setStyle(host, "alignSelf", "stretch");
         }
+        const contentWidth = (element) => {
+            if (!element) return 0;
+            const style = env.getComputedStyle?.(element);
+            const padding = (parseFloat(style?.paddingLeft) || 0) + (parseFloat(style?.paddingRight) || 0);
+            return Math.max(0, (element.clientWidth || 0) - padding);
+        };
+        // The host contains the player, so its measured width can contain our
+        // previous width. Never take the maximum of those two dependent sizes.
+        // Inline-size containment breaks that feedback in the Vue grid, while
+        // the node's logical width is an independent upper bound in both modes.
         const nodeWidth = Number(node.size?.[0] ?? node.width ?? 0);
-        const available = row
-            ? Math.max(host.clientWidth || 0, host.parentElement?.clientWidth || 0)
-            : Math.max(host.clientWidth || 0, nodeWidth - 2 * (widget.margin ?? 10));
-        // clientWidth is in logical CSS pixels; getBoundingClientRect includes
-        // graph zoom and would progressively shrink or grow the player.
-        const width = Math.max(300, Math.floor(available));
+        const nodeLimit = Math.max(0, nodeWidth - 2 * (widget.margin ?? 10));
+        const measured = row ? contentWidth(host.parentElement) : contentWidth(host);
+        const available = measured > 0 ? measured : nodeLimit;
+        const width = Math.floor(nodeLimit > 0 ? Math.min(available, nodeLimit) : available);
+        if (width <= 0) return; // Detached/hidden nodes are measured again on reveal.
         setStyle(audio, "width", `${width}px`);
-        setStyle(audio, "minWidth", "300px");
+        setStyle(audio, "minWidth", "0px");
+        setStyle(audio, "maxWidth", "100%");
         setStyle(audio, "height", "54px");
         setStyle(audio, "flex", "0 0 54px");
     }

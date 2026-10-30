@@ -34,7 +34,8 @@ function fixture(vue = true) {
 test('repairs a clipped Vue host and uses the full logical content width', () => {
     const f = fixture();
     assert.equal(f.host.style.width, '100%');
-    assert.equal(f.host.style.minWidth, '300px');
+    assert.equal(f.host.style.minWidth, '0px');
+    assert.equal(f.host.style.contain, 'inline-size');
     assert.equal(f.audio.style.width, '416px');
     f.layout.dispose();
 });
@@ -49,6 +50,7 @@ test('recovers after metadata, repeated narrow measurements, and node resizing',
         assert.equal(f.audio.style.width, '416px');
     }
     f.content.clientWidth = 550;
+    f.node.size[0] = 574;
     f.widget.options.afterResize();
     assert.equal(f.audio.style.width, '550px');
     f.layout.dispose();
@@ -58,6 +60,7 @@ test('rebinds observers when the element is reparented and ignores graph zoom', 
     const f = fixture();
     const nextHost = { clientWidth: 30, parentElement: { clientWidth: 500 }, style: {}, closest: () => f.row };
     f.audio.parentElement = nextHost;
+    f.node.size[0] = 524;
     f.layout.refresh();
     assert.equal(f.audio.style.width, '500px');
     assert.equal(nextHost.style.width, '100%');
@@ -66,9 +69,9 @@ test('rebinds observers when the element is reparented and ignores graph zoom', 
     f.layout.dispose();
 });
 
-test('classic renderer falls back to node width without changing its clipping host', () => {
+test('classic renderer respects its allocated clipping host', () => {
     const f = fixture(false);
-    assert.equal(f.audio.style.width, '420px');
+    assert.equal(f.audio.style.width, '40px');
     assert.equal(f.host.style.width, undefined);
     f.layout.dispose();
 });
@@ -86,4 +89,30 @@ test('coalesces resize notifications and removes all hooks on disposal', () => {
     f.layout.refresh();
     f.flush();
     assert.equal(f.audio.style.width, '30px');
+});
+
+
+test('stale or oversized host measurements cannot grow beyond the independent node width', () => {
+    const f = fixture();
+    f.host.clientWidth = 900;
+    for (let i = 0; i < 100; i++) {
+        f.content.clientWidth = 900 + i * 10;
+        f.layout.refresh();
+        assert.equal(f.audio.style.width, '420px');
+        assert.equal(f.audio.style.maxWidth, '100%');
+    }
+    f.node.size[0] = 240;
+    f.content.clientWidth = 216;
+    f.layout.refresh();
+    assert.equal(f.audio.style.width, '216px');
+    assert.equal(f.audio.style.minWidth, '0px');
+    f.layout.dispose();
+});
+
+test('parent padding is excluded instead of increasing the border-box audio width', () => {
+    const f = fixture();
+    f.env.getComputedStyle = () => ({paddingLeft:'12px',paddingRight:'12px'});
+    f.layout.refresh();
+    assert.equal(f.audio.style.width, '392px');
+    f.layout.dispose();
 });

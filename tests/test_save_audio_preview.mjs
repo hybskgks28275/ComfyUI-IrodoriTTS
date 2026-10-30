@@ -49,13 +49,14 @@ function fixture() {
     return { node, widget: node.widgets[0], audio: elements[0], elements };
 }
 
-test('native player is the DOM root with stable intrinsic width and layout bounds', () => {
+test('native player is the DOM root with responsive CSS and layout bounds', () => {
     const { widget, audio, elements } = fixture();
     assert.equal(elements.length, 1);
     assert.equal(widget.element, audio);
     assert.equal(audio.tagName, 'AUDIO');
     assert.equal(audio.controls, true);
-    assert.match(audio.style.cssText, /min-width:300px/);
+    assert.match(audio.style.cssText, /min-width:0/);
+    assert.match(audio.style.cssText, /max-width:100%/);
     assert.equal(widget.computeLayoutSize().minWidth, 300);
     assert.equal(widget.computeLayoutSize().minHeight, 66);
     assert.equal(widget.computeLayoutSize().maxHeight, 66);
