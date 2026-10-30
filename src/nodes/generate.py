@@ -1,4 +1,5 @@
 import gc
+import hashlib
 import logging
 import tempfile
 import threading
@@ -54,7 +55,7 @@ def release_cached_runtime():
         _RUNTIME_LOCK.release()
 
 
-def prepare_reference(audio: dict, path: Path) -> None:
+def prepare_reference(audio: dict, path: Path) -> str:
     waveform = audio["waveform"]
     sample_rate = audio["sample_rate"]
     if not isinstance(waveform, torch.Tensor) or waveform.ndim != 3:
@@ -71,6 +72,11 @@ def prepare_reference(audio: dict, path: Path) -> None:
     # The official runtime handles sample-rate conversion and loudness normalization.
     mono = waveform[0].mean(dim=0).numpy()
     sf.write(str(path), mono, sample_rate, subtype="FLOAT")
+    # Float WAV headers may contain a changing PEAK timestamp. Hash the PCM
+    # and rate instead of the temporary path or serialized container bytes.
+    digest = hashlib.sha256(sample_rate.to_bytes(8, "little"))
+    digest.update(mono.tobytes())
+    return digest.hexdigest()
 
 
 class IrodoriTTSGenerate(io.ComfyNode):
@@ -118,6 +124,8 @@ class IrodoriTTSGenerate(io.ComfyNode):
                                tooltip="PEFT adapter folder under models/irodori_tts/loras. Select none to use the base model."),
                 io.Float.Input("lora_strength", optional=True, default=1.0, min=0.0, max=2.0, step=0.05,
                                tooltip="LoRA scale multiplier. 1 uses the trained adapter scale. Changing the adapter or strength reloads the model."),
+                io.Boolean.Input("split_rare_tokens", optional=True, default=True,
+                                 tooltip="Split rare long tokens to reduce misreadings in Small models. Text is not rewritten. Large models are unaffected. Changing this setting reloads the model."),
             ],
             outputs=[io.Audio.Output("audio")],
         )
@@ -127,7 +135,8 @@ class IrodoriTTSGenerate(io.ComfyNode):
                 seconds, duration_scale, device, precision, codec_device, allow_download,
                 caption="", reference_audio=None, unload_after_generate=False,
                 model_name=DEFAULT_MODEL, dynamic_vram=True, speaker_embedding=NONE,
-                speaker_uncond_mode="mask", lora_adapter=NONE, lora_strength=1.0) -> io.NodeOutput:
+                speaker_uncond_mode="mask", lora_adapter=NONE, lora_strength=1.0,
+                split_rare_tokens=True) -> io.NodeOutput:
         global _RUNTIME, _RUNTIME_KEY, _RUNTIME_MANAGER, _RUNTIME_LORA_KEY
         if model_name not in MODEL_SPECS:
             raise ValueError(f"Unsupported model_name: {model_name}")
@@ -190,17 +199,19 @@ class IrodoriTTSGenerate(io.ComfyNode):
             try:
                 with tempfile.TemporaryDirectory(prefix="irodori-") as tmp:
                     reference_paths = []
+                    reference_cache_key = []
                     for index, audio in enumerate(references):
                         mm.throw_exception_if_processing_interrupted()
                         reference_path = Path(tmp) / f"reference_{index:04d}.wav"
-                        prepare_reference(audio, reference_path)
+                        content_key = prepare_reference(audio, reference_path)
                         reference_paths.append(str(reference_path))
+                        reference_cache_key.append(content_key)
                     checkpoint, codec = resolve_models(Path(folder_paths.models_dir) / "irodori_tts", allow_download, model_name)
                     mm.throw_exception_if_processing_interrupted()
                     key = RuntimeKey(
                         checkpoint=str(checkpoint), model_device=device, model_precision=precision,
                         codec_repo=str(codec), codec_device=codec_device, codec_precision="fp32",
-                        comfy_dynamic_vram=use_dynamic)
+                        comfy_dynamic_vram=use_dynamic, split_rare_tokens=split_rare_tokens)
                     if not use_dynamic:
                         mm.unload_all_models()
                     lora_key = (lora_stamp, lora_strength if lora_path else None)
@@ -242,6 +253,7 @@ class IrodoriTTSGenerate(io.ComfyNode):
                     result = _RUNTIME.synthesize(SamplingRequest(
                         text=text, caption=caption if use_caption else None,
                         ref_wavs=reference_paths or None,
+                        reference_cache_key=tuple(reference_cache_key) if reference_paths else None,
                         ref_embed=str(speaker_path) if speaker_path else None,
                         speaker_uncond_mode=speaker_uncond_mode,
                         no_ref=not (use_reference or use_speaker), seed=seed, num_steps=steps,

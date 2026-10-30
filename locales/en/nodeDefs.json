@@ -113,6 +113,10 @@
       "lora_strength": {
         "name": "LoRA strength",
         "tooltip": "LoRA scale multiplier. 1 uses the trained adapter scale. Changing the adapter or strength reloads the model."
+      },
+      "split_rare_tokens": {
+        "name": "Split rare tokens",
+        "tooltip": "Split rare long tokens to reduce misreadings in Small models. Text is not rewritten. Large models are unaffected. Changing this setting reloads the model."
       }
     },
     "outputs": {
