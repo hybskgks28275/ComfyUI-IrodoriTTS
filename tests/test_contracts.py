@@ -426,6 +426,24 @@ class RuntimeCacheTests(unittest.TestCase):
         self.assertEqual(len(self.references), 1)
         self.assertIsNotNone(self.references[0]())
 
+    def test_token_split_toggle_reloads_runtime(self):
+        self.generate()
+        self.assertTrue(nodes._RUNTIME_KEY.split_rare_tokens)
+        self.generate(split_rare_tokens=False)
+        self.assertFalse(nodes._RUNTIME_KEY.split_rare_tokens)
+        self.assertEqual(len(self.references), 2)
+
+    def test_reference_content_cache_key_survives_temporary_paths(self):
+        audio = {"waveform": torch.ones(1, 1, 100), "sample_rate": 48000}
+        self.generate(mode="text_reference", reference_audio=audio)
+        first = self.requests[-1]
+        self.generate(mode="text_reference", reference_audio=audio, seed=1)
+        second = self.requests[-1]
+        self.assertNotEqual(first.ref_wavs, second.ref_wavs)
+        self.assertEqual(first.reference_cache_key, second.reference_cache_key)
+        self.generate(mode="text_reference", reference_audio=audio | {"waveform": torch.zeros(1, 1, 100)})
+        self.assertNotEqual(first.reference_cache_key, self.requests[-1].reference_cache_key)
+
     def test_speaker_modes_forward_embedding_and_reuse_model(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(folders, "models_dir", tmp):
             root = Path(tmp) / "irodori_tts/speakers"
