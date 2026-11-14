@@ -1,0 +1,20 @@
+[project]
+name = "irodori-tts-nodes"
+description = "Japanese speech generation with Irodori TTS, ordered reference audio, and audio export for ComfyUI."
+version = "1.0.0"
+license = { file = "LICENSE" }
+dependencies = [
+    "dacvae @ git+https://github.com/facebookresearch/dacvae.git@414c20785fc3a28373073ea8ef7a1316eeeaca6e",
+    "transformers>=5.3.0,<6",
+    "huggingface-hub>=0.34.0",
+    "safetensors>=0.7.0",
+    "soundfile>=0.12.0",
+    "sentencepiece>=0.2.0",
+]
+
+[project.urls]
+Repository = "https://github.com/hybskgks28275/ComfyUI-IrodoriTTS"
+
+[tool.comfy]
+PublisherId = "hybskgks28275"
+DisplayName = "Irodori TTS for ComfyUI"
