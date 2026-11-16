@@ -1,5 +1,7 @@
 # ComfyUI-IrodoriTTS
 
+**日本語** | [English](README.en.md)
+
 Irodori-TTS-v4.1-SmallとIrodori-TTS-v4-Large、および両モデルの公式量子化版に対応するComfyUIカスタムノードです。
 ComfyUI V3 API（`ComfyExtension` / `io.ComfyNode` / `define_schema`）形式で実装しています。
 
@@ -192,6 +194,7 @@ LoRAは重みにマージせずに適用するため、通常版と公式量子�
 | `model_name` | Irodori-TTS-v4.1-Small。Small／Largeを選択 |
 | `dynamic_vram` | true。ComfyUI本体のDynamic VRAMが有効なCUDA環境では、TTSモデルの重みを必要に応じて転送・退避 |
 | `split_rare_tokens` | true。Smallのまれな長いトークンを分割し、読み間違いを抑えるための設定。入力文自体は変更せず、Largeには適用しません。変更時はモデルを再ロード |
+| `length_check` | false。v4.1-Smallで `seconds=0` の場合、読み終わりから音声長を推定し、必要なら同じシードで短く再生成します。再生成や再試行がある場合は処理時間が増えます。 |
 
 生成ノードの数値入力は、クラシック表示の左右矢印、Nodes 2.0の−／＋を押し続けると連続して増減します。
 短いクリックは1段階、約0.35秒の長押し後は約0.075秒ごとに1段階変更します。
@@ -231,7 +234,16 @@ TTSモデルはComfyUIの自動退避の対象外となります。保持したT
 ### Attentionの設定
 
 マスク付きAttentionは公式のSDPA優先順位を使用し、対応環境では任意のFlashAttention-3も使用できます。追加のAttentionパッケージのインストールは必須ではありません。
-可変長入力でcuDNNの初回処理が遅い場合は、ComfyUIを起動する前に環境変数`IRODORI_SDPA_CUDNN=0`を設定すると、cuDNNを候補から外します。`IRODORI_ATTENTION_BACKEND=sdpa`はFlashAttention-3を使用せずSDPAを指定する設定です。速度はGPU・入力長・実行環境によって異なります。
+Generateノードの **Attentionバックエンド** で、生成ごとに方式を選択できます。
+
+| 設定 | 動作 |
+| --- | --- |
+| `auto`（既定） | 対応する処理ではFlashAttention-3、その他はPyTorch SDPAを使用します。 |
+| `sdpa` | PyTorch SDPAを使用します。 |
+| `comfy_kitchen` | 対応GPUとマスク対応版のcomfy-kitchenがある場合にINT8 Attentionを使用します。利用できない場合はSDPAに切り替わります。 |
+
+AttentionのINT8化はモデルの通常版・量子化版の選択と独立しています。バックエンドを切り替えてもモデルは再ロードされません。生成結果や速度はGPU・入力長・バックエンドにより変わる場合があります。可変長の入力でcuDNNの初回処理が遅い場合は、起動前に `IRODORI_SDPA_CUDNN=0` を設定すると、マスク付きSDPAの候補からcuDNNを外せます。
+
 
 同梱ランタイムの`synthesize_batch`は、互換性のある複数リクエストを、異なる長さ・seedでまとめて生成できます。Generateノードは1回の実行で1件を生成し、複数のGenerateノードの実行を自動的にまとめるものではありません。
 

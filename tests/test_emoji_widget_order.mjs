@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 const source = readFileSync(new URL('../web/emoji_palette.js', import.meta.url), 'utf8');
 const reorder = new Function('paletteWidget', 'textWidget', source.slice(source.indexOf('            paletteWidget.serialize = false;'), source.indexOf('            toggle.addEventListener')));
-const names = ['mode','text','seed','control_after_generate','steps','cfg_text','cfg_reference','cfg_caption','seconds','duration_scale','device','precision','codec_device','allow_download','caption','unload_after_generate','model_name','dynamic_vram','speaker_embedding','speaker_uncond_mode','lora_adapter','lora_strength','split_rare_tokens'];
+const names = ['mode','text','seed','control_after_generate','steps','cfg_text','cfg_reference','cfg_caption','seconds','duration_scale','device','precision','codec_device','allow_download','caption','unload_after_generate','model_name','dynamic_vram','speaker_embedding','speaker_uncond_mode','lora_adapter','lora_strength','split_rare_tokens','attention_backend','length_check'];
 function node() {
     const values = ['text','',0,'fixed',40,3,5,3,0,1,'auto','fp32','cpu',true,'',false,'Irodori-TTS-v4.1-Small',true,'none','mask','none',1,true];
     const n = {
@@ -46,4 +46,17 @@ test('rare-token split setting survives visual reorder and save/reload',()=>{
     const saved=n.serializeFromStoreState(), restored=node(); restored.configure(saved);
     assert.equal(saved.widgets_values[22],false);
     assert.equal(restored.widgets.find(w=>w.name==='split_rare_tokens').value,false);
+});
+
+test('attention backend and length check are appended after existing workflow values', () => {
+    const n = node();
+    n.widgets.find(w => w.name === 'attention_backend').value = 'comfy_kitchen';
+    n.widgets.find(w => w.name === 'length_check').value = true;
+    const saved = n.serializeFromStoreState();
+    const restored = node();
+    restored.configure(saved);
+    assert.equal(saved.widgets_values[23], 'comfy_kitchen');
+    assert.equal(saved.widgets_values[24], true);
+    assert.equal(restored.widgets.find(w => w.name === 'length_check').value, true);
+    assert.equal(restored.widgets.find(w => w.name === 'attention_backend').value, 'comfy_kitchen');
 });

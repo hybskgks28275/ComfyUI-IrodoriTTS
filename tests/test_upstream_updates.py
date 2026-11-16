@@ -64,6 +64,78 @@ class AttentionTests(unittest.TestCase):
         torch.testing.assert_close(attention.masked_sdpa(q, q, q, mask), expected.transpose(1, 2))
 
 
+    def test_comfy_kitchen_opt_in_keeps_cpu_mask_and_disables_fa3(self):
+        q = torch.randn(2, 5, 2, 8)
+        mask = torch.tensor([[True, True, False, False, False], [True] * 5])
+        expected = attention.masked_sdpa(q, q, q, mask[:, None, None, :])
+        with (
+            attention.use_attention_backend("comfy_kitchen"),
+            patch.object(attention, "_kitchen_attention") as kitchen,
+            patch.object(attention, "_fa3_varlen_func", object()),
+            patch.object(attention, "_fa3_device_ok") as probe,
+        ):
+            plan = attention.build_context_attention_plan(
+                [mask], query_len=q.size(1), attention_dtype=q.dtype,
+            )
+            self.assertFalse(plan.use_fa3)
+            torch.testing.assert_close(attention.context_attention(q, q, q, plan), expected)
+            torch.testing.assert_close(attention.prefix_key_mask_attention(q, q, q, mask), expected)
+            kitchen.assert_not_called()
+            probe.assert_not_called()
+
+
+class LengthCheckTests(unittest.TestCase):
+    def test_resynthesis_reuses_seed_and_forwards_callbacks(self):
+        length_check = importlib.import_module(f"{vendor}.length_check")
+        recorders = []
+        requests = []
+        progress = []
+
+        class Recorder:
+            def __init__(self, model, on_call):
+                self.on_call = on_call
+                self.pointer = torch.zeros(100)
+                self.calls = 0
+                self.text_len = 4
+                self.closed = False
+                recorders.append(self)
+
+            def close(self):
+                self.closed = True
+
+        class Runtime:
+            model_cfg = types.SimpleNamespace(num_layers=12, num_heads=20, model_dim=1280, latent_patch_size=1)
+            codec = types.SimpleNamespace(sample_rate=48000, model=types.SimpleNamespace(hop_length=1920))
+            model = object()
+
+            def synthesize(self, request, log_fn, step_callback):
+                requests.append(request)
+                current = recorders[-1]
+                for i in range(request.num_steps):
+                    step_callback(i, request.num_steps)
+                    current.calls += 1
+                    current.on_call(current)
+                return "decoded"
+
+        request = runtime.SamplingRequest(text="test", seed=12, num_steps=2)
+        with (
+            patch.object(length_check, "PointerRecorder", Recorder),
+            patch.object(length_check, "estimated_frames", return_value=60),
+            patch.object(length_check, "reading_end", side_effect=[None, 57]),
+        ):
+            result, info = length_check.synthesize(
+                Runtime(), request, step_callback=lambda i, total: progress.append((i, total)),
+            )
+        self.assertEqual(result, "decoded")
+        self.assertEqual(info["length_check"], "resynthesized")
+        self.assertEqual(info["retries"], 1)
+        self.assertEqual([req.seconds for req in requests], [None, 2.4, 3.0])
+        self.assertEqual([req.seed for req in requests], [12, 12, 12])
+        self.assertEqual([req.collect_duration_tokens for req in requests], [True, False, False])
+        self.assertEqual(progress, [(0, 2), (1, 2)] * 3)
+        self.assertTrue(all(recorder.closed for recorder in recorders))
+
+
 class ReferenceCacheTests(unittest.TestCase):
     def test_content_keys_include_order_normalization_and_length_but_not_temporary_path(self):
         req = runtime.SamplingRequest(text="test", reference_cache_key=("clip_a", "clip_b"))

@@ -117,6 +117,14 @@
       "split_rare_tokens": {
         "name": "Split rare tokens",
         "tooltip": "Split rare long tokens to reduce misreadings in Small models. Text is not rewritten. Large models are unaffected. Changing this setting reloads the model."
+      },
+      "attention_backend": {
+        "name": "Attention backend",
+        "tooltip": "Auto uses FlashAttention-3 when available or PyTorch SDPA. Comfy Kitchen uses INT8 attention when supported and falls back to SDPA."
+      },
+      "length_check": {
+        "name": "Length check",
+        "tooltip": "For v4.1-Small with automatic duration, check for excess length and regenerate at a shorter duration when needed."
       }
     },
     "outputs": {

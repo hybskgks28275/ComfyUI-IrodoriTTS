@@ -117,6 +117,14 @@
       "split_rare_tokens": {
         "name": "まれな長いトークンを分割",
         "tooltip": "Smallモデルの読み間違いを抑えるため、まれな長いトークンを分割します。入力テキスト自体は変更せず、Largeには影響しません。設定変更時はモデルを再ロードします。"
+      },
+      "attention_backend": {
+        "name": "Attentionバックエンド",
+        "tooltip": "autoは利用可能ならFlashAttention-3、そうでなければPyTorch SDPAを使用します。comfy_kitchenは対応環境でINT8 Attentionを使い、利用できない場合はSDPAに切り替えます。"
+      },
+      "length_check": {
+        "name": "音声長チェック",
+        "tooltip": "v4.1-Smallで音声長を自動設定する場合に、長すぎると推定された音声を短い長さで再生成します。"
       }
     },
     "outputs": {
