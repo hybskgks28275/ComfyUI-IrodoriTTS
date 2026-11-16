@@ -426,6 +426,15 @@ class RuntimeCacheTests(unittest.TestCase):
         self.assertEqual(len(self.references), 1)
         self.assertIsNotNone(self.references[0]())
 
+    def test_attention_backend_is_scoped_and_reuses_runtime(self):
+        attention = importlib.import_module(f"{PACKAGE}.modules.vendor.irodori_tts.attention")
+        self.generate()
+        with patch.object(nodes, "use_attention_backend", wraps=attention.use_attention_backend) as select:
+            self.generate(attention_backend="comfy_kitchen")
+            select.assert_called_once_with("comfy_kitchen")
+        self.assertEqual(len(self.references), 1)
+        self.assertEqual(attention._ATTENTION_BACKEND.get(), "auto")
+
     def test_token_split_toggle_reloads_runtime(self):
         self.generate()
         self.assertTrue(nodes._RUNTIME_KEY.split_rare_tokens)

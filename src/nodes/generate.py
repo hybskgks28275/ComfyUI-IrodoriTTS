@@ -18,6 +18,7 @@ from ..modules.adapters import (
     NONE, list_assets, resolve_asset, asset_fingerprint,
     validate_lora_strength, require_lora_support, apply_lora,
 )
+from ..modules.vendor.irodori_tts.attention import ATTENTION_BACKENDS, use_attention_backend
 from .reference_audio import ReferenceAudios
 
 MODES = ["text", "text_caption", "text_reference", "text_caption_reference", "text_speaker", "text_caption_speaker"]
@@ -126,6 +127,10 @@ class IrodoriTTSGenerate(io.ComfyNode):
                                tooltip="LoRA scale multiplier. 1 uses the trained adapter scale. Changing the adapter or strength reloads the model."),
                 io.Boolean.Input("split_rare_tokens", optional=True, default=True,
                                  tooltip="Split rare long tokens to reduce misreadings in Small models. Text is not rewritten. Large models are unaffected. Changing this setting reloads the model."),
+                io.Combo.Input("attention_backend", options=list(ATTENTION_BACKENDS), optional=True, default="auto",
+                               tooltip="Auto uses FlashAttention-3 when available or PyTorch SDPA. Comfy Kitchen uses INT8 attention when supported and falls back to SDPA."),
+                io.Boolean.Input("length_check", optional=True, default=False,
+                                 tooltip="For v4.1-Small with automatic duration, check for excess length and regenerate at a shorter duration when needed."),
             ],
             outputs=[io.Audio.Output("audio")],
         )
@@ -136,7 +141,7 @@ class IrodoriTTSGenerate(io.ComfyNode):
                 caption="", reference_audio=None, unload_after_generate=False,
                 model_name=DEFAULT_MODEL, dynamic_vram=True, speaker_embedding=NONE,
                 speaker_uncond_mode="mask", lora_adapter=NONE, lora_strength=1.0,
-                split_rare_tokens=True) -> io.NodeOutput:
+                split_rare_tokens=True, attention_backend="auto", length_check=False) -> io.NodeOutput:
         global _RUNTIME, _RUNTIME_KEY, _RUNTIME_MANAGER, _RUNTIME_LORA_KEY
         if model_name not in MODEL_SPECS:
             raise ValueError(f"Unsupported model_name: {model_name}")
@@ -194,7 +199,7 @@ class IrodoriTTSGenerate(io.ComfyNode):
         mm.throw_exception_if_processing_interrupted()
         progress = comfy.utils.ProgressBar(steps + 3)
         # Share one runtime across node instances and serialize its use/replacement.
-        with _RUNTIME_LOCK:
+        with _RUNTIME_LOCK, use_attention_backend(attention_backend):
             succeeded = False
             try:
                 with tempfile.TemporaryDirectory(prefix="irodori-") as tmp:
@@ -242,15 +247,20 @@ class IrodoriTTSGenerate(io.ComfyNode):
                         with torch.inference_mode(False), torch.no_grad():
                             _RUNTIME_MANAGER.load()
 
+                    completed_steps = 0
+
                     def step_callback(step, total):
+                        nonlocal completed_steps
                         mm.throw_exception_if_processing_interrupted()
-                        progress.update_absolute(step + 1)
+                        progress.update_absolute(completed_steps + step + 1, completed_steps + total + 3)
+                        if step + 1 == total:
+                            completed_steps += total
 
                     def log(message):
                         mm.throw_exception_if_processing_interrupted()
                         LOGGER.info("[Irodori TTS] %s", message)
 
-                    result = _RUNTIME.synthesize(SamplingRequest(
+                    request = SamplingRequest(
                         text=text, caption=caption if use_caption else None,
                         ref_wavs=reference_paths or None,
                         reference_cache_key=tuple(reference_cache_key) if reference_paths else None,
@@ -260,11 +270,19 @@ class IrodoriTTSGenerate(io.ComfyNode):
                         cfg_scale_text=cfg_text, cfg_scale_speaker=cfg_reference,
                         cfg_scale_caption=cfg_caption, seconds=seconds or None,
                         duration_scale=duration_scale,
-                    ), log_fn=log, step_callback=step_callback)
+                    )
+                    if length_check and request.seconds is None:
+                        from ..modules.vendor.irodori_tts import length_check as duration_check
+                        result, length_info = duration_check.synthesize(
+                            _RUNTIME, request, log_fn=log, step_callback=step_callback,
+                        )
+                        log(f"[length_check] {length_info['length_check']}")
+                    else:
+                        result = _RUNTIME.synthesize(request, log_fn=log, step_callback=step_callback)
                     waveform = result.audio.detach().to(device="cpu", dtype=torch.float32).unsqueeze(0).contiguous()
                     if waveform.numel() == 0 or not torch.isfinite(waveform).all():
                         raise RuntimeError("Generated audio is empty or contains non-finite values. Retry with fp32 or a different seed.")
-                    progress.update_absolute(steps + 3)
+                    progress.update_absolute(completed_steps + 3, completed_steps + 3)
                     succeeded = True
                     return io.NodeOutput({"waveform": waveform, "sample_rate": result.sample_rate})
             finally:

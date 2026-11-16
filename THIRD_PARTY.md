@@ -2,7 +2,7 @@
 
 `src/modules/vendor/irodori_tts` contains the inference dependency closure from
 [Aratako/Irodori-TTS](https://github.com/Aratako/Irodori-TTS), commit
-`59be938c99d48b5653ca5aa3fdd0cddaa56940e5` (2026-10-25).
+`382205679ebc32295b7d1bfb329327d04c8f4eed` (2026-11-09).
 MIT license: `src/modules/vendor/IRODORI_LICENSE`.
 
 Training scripts, dataset, optimizer, training progress, and Gradio helpers are omitted.
@@ -13,6 +13,12 @@ but no training or quantization conversion. It resolves v4.1-Small and v4-Large 
 including their official torchao quantized variants for inference.
 
 Local modifications:
+
+- `length_check.py` and `inference_runtime.py`: forward the per-step callback
+  during all length-check passes and collect per-token timing only when requested.
+
+- `attention.py`, `model.py`: opt-in Comfy Kitchen INT8 attention dispatch with
+  a masked PyTorch SDPA fallback.
 
 - `lora.py`: optional PEFT configuration argument for standalone torchao Linear
   layers. The integration uses an unmerged LoRA forward and preserves packed weights.

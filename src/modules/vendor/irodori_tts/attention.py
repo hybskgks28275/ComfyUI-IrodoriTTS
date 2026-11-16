@@ -13,14 +13,19 @@ Invariant: key-padding masks in this codebase are prefix-contiguous (right
 padding). The FA3 ``seqused`` paths rely on that invariant; callers must not
 pass masks with holes.
 
-Set ``IRODORI_ATTENTION_BACKEND=sdpa`` to disable the FA3 paths at runtime.
+Select an attention backend for the current generation with use_attention_backend.
 Set ``IRODORI_SDPA_CUDNN=0`` to drop cuDNN from the SDPA priority.
 """
 
 from __future__ import annotations
 
+import logging
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import lru_cache
+from inspect import signature
 
 import torch
 import torch.nn.functional as F
@@ -45,8 +50,38 @@ _FA3_DTYPES = (torch.float16, torch.bfloat16)
 _fa3_device_ok_cache: dict[int, bool] = {}
 
 
-def _fa3_disabled() -> bool:
-    return os.environ.get("IRODORI_ATTENTION_BACKEND", "").strip().lower() == "sdpa"
+ATTENTION_BACKENDS = ("auto", "sdpa", "comfy_kitchen")
+_ATTENTION_BACKEND = ContextVar("irodori_attention_backend", default="auto")
+_LOG = logging.getLogger(__name__)
+
+
+@contextmanager
+def use_attention_backend(backend: str):
+    if backend not in ATTENTION_BACKENDS:
+        raise ValueError(f"Unsupported attention_backend: {backend}")
+    token = _ATTENTION_BACKEND.set(backend)
+    try:
+        yield
+    finally:
+        _ATTENTION_BACKEND.reset(token)
+
+
+@lru_cache(maxsize=None)
+def _kitchen_attention(device: torch.device):
+    try:
+        from comfy_kitchen import int8_attention, int8_attention_is_available
+    except (ImportError, OSError):
+        return None
+    if "attn_mask" not in signature(int8_attention).parameters:
+        return None
+    if not int8_attention_is_available(device):
+        return None
+    return int8_attention
+
+
+@lru_cache(maxsize=None)
+def _log_kitchen_unavailable(device: torch.device) -> None:
+    _LOG.warning("Irodori TTS: Comfy Kitchen INT8 attention unavailable on %s; using SDPA.", device)
 
 
 def _sdpa_priority() -> list[SDPBackend]:
@@ -88,7 +123,7 @@ def _fa3_device_ok(device: torch.device) -> bool:
 def fa3_usable(device: torch.device, dtype: torch.dtype) -> bool:
     return (
         _fa3_varlen_func is not None
-        and not _fa3_disabled()
+        and _ATTENTION_BACKEND.get() == "auto"
         and dtype in _FA3_DTYPES
         and _fa3_device_ok(device)
     )
@@ -147,6 +182,32 @@ def masked_sdpa(
         return _sdpa(q, k, v, attn_mask)
 
 
+def attention_with_mask(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    attn_mask: torch.Tensor | None,
+) -> torch.Tensor:
+    """Select the optional Comfy Kitchen inference kernel or use SDPA."""
+    if _ATTENTION_BACKEND.get() == "comfy_kitchen":
+        kernel = _kitchen_attention(q.device) if q.is_cuda else None
+        if kernel is None:
+            _log_kitchen_unavailable(q.device)
+        elif (
+            not (torch.is_grad_enabled() and any(t.requires_grad for t in (q, k, v)))
+            and q.dtype in (torch.float32, torch.float16, torch.bfloat16)
+            and q.dtype == k.dtype == v.dtype
+            and 0 < q.shape[-1] <= 256
+            and q.shape[-1] == k.shape[-1] == v.shape[-1]
+            and q.size(1) > 0
+            and k.size(1) > 0
+        ):
+            inputs = [t.transpose(1, 2) for t in (q, k, v)]
+            inputs = [t if t.stride(-1) == 1 else t.contiguous() for t in inputs]
+            return kernel(*inputs, attn_mask=attn_mask).transpose(1, 2)
+    return masked_sdpa(q, k, v, attn_mask)
+
+
 def _fixed_stride_cu_seqlens(batch: int, seq_len: int, device: torch.device) -> torch.Tensor:
     return torch.arange(
         0,
@@ -174,8 +235,7 @@ def prefix_key_mask_attention(
     backend's behavior the previous implementation relied on.
     """
     if key_mask is None:
-        # No mask: the default dispatch already picks FlashAttention.
-        return _sdpa(q, k, v, None)
+        return attention_with_mask(q, k, v, None)
     if fa3_usable(q.device, q.dtype) and k.dtype == q.dtype and v.dtype == q.dtype:
         bsz, seq_len, heads, head_dim = q.shape
         # Fully masked rows attend to position 0 instead; combined with the
@@ -211,7 +271,7 @@ def prefix_key_mask_attention(
     # only ever produce such rows with zeroed inputs, so the result stays zero.
     safe_mask = key_mask.clone()
     safe_mask[:, 0] |= ~key_mask.any(dim=1)
-    return masked_sdpa(q, k, v, safe_mask[:, None, None, :])
+    return attention_with_mask(q, k, v, safe_mask[:, None, None, :])
 
 
 @dataclass
@@ -297,4 +357,4 @@ def context_attention(
             plan.max_seqlen_k,
         )
         return out.view(bsz, sq, heads, head_dim)
-    return masked_sdpa(q, k, v, plan.kv_mask[:, None, None, :])
+    return attention_with_mask(q, k, v, plan.kv_mask[:, None, None, :])
