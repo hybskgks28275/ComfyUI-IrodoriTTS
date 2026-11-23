@@ -1,7 +1,7 @@
 [project]
 name = "irodori-tts-nodes"
 description = "Japanese speech generation with Irodori TTS, ordered reference audio, and audio export for ComfyUI."
-version = "1.1.0"
+version = "1.2.0"
 license = { file = "LICENSE" }
 dependencies = [
     "dacvae @ git+https://github.com/facebookresearch/dacvae.git@414c20785fc3a28373073ea8ef7a1316eeeaca6e",

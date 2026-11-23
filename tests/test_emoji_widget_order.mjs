@@ -3,9 +3,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 const source = readFileSync(new URL('../web/emoji_palette.js', import.meta.url), 'utf8');
 const reorder = new Function('paletteWidget', 'textWidget', source.slice(source.indexOf('            paletteWidget.serialize = false;'), source.indexOf('            toggle.addEventListener')));
-const names = ['mode','text','seed','control_after_generate','steps','cfg_text','cfg_reference','cfg_caption','seconds','duration_scale','device','precision','codec_device','allow_download','caption','unload_after_generate','model_name','dynamic_vram','speaker_embedding','speaker_uncond_mode','lora_adapter','lora_strength','split_rare_tokens','attention_backend','length_check'];
+const names = ['mode','text','seed','control_after_generate','steps','cfg_text','cfg_reference','cfg_caption','seconds','duration_scale','device','precision','codec_device','allow_download','caption','unload_after_generate','model_name','dynamic_vram','speaker_embedding','speaker_uncond_mode','lora_adapter','lora_strength','split_rare_tokens','attention_backend','length_check','long_generation','chunk_max_chars','pause_ms'];
 function node() {
-    const values = ['text','',0,'fixed',40,3,5,3,0,1,'auto','fp32','cpu',true,'',false,'Irodori-TTS-v4.1-Small',true,'none','mask','none',1,true];
+    const values = ['text','',0,'fixed',40,3,5,3,0,1,'auto','fp32','cpu',true,'',false,'Irodori-TTS-v4.1-Small',true,'none','mask','none',1,true,'auto',false,false,80,250];
     const n = {
         widgets: names.map((name,i)=>({name,value:values[i]})),
         configure(info) { this.widgets.filter(w=>w.serialize!==false).forEach((w,i)=>{w.value=info.widgets_values[i]}); },
@@ -59,4 +59,16 @@ test('attention backend and length check are appended after existing workflow va
     assert.equal(saved.widgets_values[24], true);
     assert.equal(restored.widgets.find(w => w.name === 'length_check').value, true);
     assert.equal(restored.widgets.find(w => w.name === 'attention_backend').value, 'comfy_kitchen');
+});
+
+test('long generation controls round-trip after older workflow values', () => {
+    const n = node();
+    for (const [name, value] of Object.entries({ long_generation: true, chunk_max_chars: 60, pause_ms: 0 })) {
+        n.widgets.find(w => w.name === name).value = value;
+    }
+    const saved = n.serializeFromStoreState();
+    assert.deepEqual(saved.widgets_values.slice(25), [true, 60, 0]);
+    const restored = node();
+    restored.configure(saved);
+    assert.deepEqual(restored.serializeFromStoreState().widgets_values, saved.widgets_values);
 });
