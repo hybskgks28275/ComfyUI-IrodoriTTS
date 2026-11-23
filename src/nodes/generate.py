@@ -19,6 +19,7 @@ from ..modules.adapters import (
     validate_lora_strength, require_lora_support, apply_lora,
 )
 from ..modules.vendor.irodori_tts.attention import ATTENTION_BACKENDS, use_attention_backend
+from ..modules.long_generation import split_long_text
 from .reference_audio import ReferenceAudios
 
 MODES = ["text", "text_caption", "text_reference", "text_caption_reference", "text_speaker", "text_caption_speaker"]
@@ -131,6 +132,12 @@ class IrodoriTTSGenerate(io.ComfyNode):
                                tooltip="Auto uses FlashAttention-3 when available or PyTorch SDPA. Comfy Kitchen uses INT8 attention when supported and falls back to SDPA."),
                 io.Boolean.Input("length_check", optional=True, default=False,
                                  tooltip="For v4.1-Small with automatic duration, check for excess length and regenerate at a shorter duration when needed."),
+                io.Boolean.Input("long_generation", optional=True, default=False,
+                                 tooltip="Generate long text in sections and return one joined audio clip."),
+                io.Int.Input("chunk_max_chars", optional=True, default=80, min=20, max=1000,
+                             tooltip="Maximum characters per section. Prefer punctuation and line breaks."),
+                io.Int.Input("pause_ms", optional=True, default=250, min=0, max=10000,
+                             tooltip="Silence between sections in milliseconds. Set to 0 for no added pause."),
             ],
             outputs=[io.Audio.Output("audio")],
         )
@@ -141,7 +148,8 @@ class IrodoriTTSGenerate(io.ComfyNode):
                 caption="", reference_audio=None, unload_after_generate=False,
                 model_name=DEFAULT_MODEL, dynamic_vram=True, speaker_embedding=NONE,
                 speaker_uncond_mode="mask", lora_adapter=NONE, lora_strength=1.0,
-                split_rare_tokens=True, attention_backend="auto", length_check=False) -> io.NodeOutput:
+                split_rare_tokens=True, attention_backend="auto", length_check=False,
+                long_generation=False, chunk_max_chars=80, pause_ms=250) -> io.NodeOutput:
         global _RUNTIME, _RUNTIME_KEY, _RUNTIME_MANAGER, _RUNTIME_LORA_KEY
         if model_name not in MODEL_SPECS:
             raise ValueError(f"Unsupported model_name: {model_name}")
@@ -149,6 +157,9 @@ class IrodoriTTSGenerate(io.ComfyNode):
             raise ValueError(f"Unsupported mode: {mode}")
         if not text.strip():
             raise ValueError("Enter text to synthesize.")
+        if long_generation and pause_ms < 0:
+            raise ValueError("pause_ms must be nonnegative.")
+        chunks = split_long_text(text, chunk_max_chars) if long_generation else [text]
         use_reference = mode in {"text_reference", "text_caption_reference"}
         use_speaker = mode in {"text_speaker", "text_caption_speaker"}
         use_caption = mode in {"text_caption", "text_caption_reference", "text_caption_speaker"}
@@ -197,7 +208,7 @@ class IrodoriTTSGenerate(io.ComfyNode):
                            getattr(getattr(comfy, "memory_management", None), "aimdo_enabled", False))
 
         mm.throw_exception_if_processing_interrupted()
-        progress = comfy.utils.ProgressBar(steps + 3)
+        progress = comfy.utils.ProgressBar(len(chunks) * steps + 3)
         # Share one runtime across node instances and serialize its use/replacement.
         with _RUNTIME_LOCK, use_attention_backend(attention_backend):
             succeeded = False
@@ -252,7 +263,8 @@ class IrodoriTTSGenerate(io.ComfyNode):
                     def step_callback(step, total):
                         nonlocal completed_steps
                         mm.throw_exception_if_processing_interrupted()
-                        progress.update_absolute(completed_steps + step + 1, completed_steps + total + 3)
+                        progress.update_absolute(completed_steps + step + 1,
+                                                 completed_steps + total + remaining_chunks * steps + 3)
                         if step + 1 == total:
                             completed_steps += total
 
@@ -260,31 +272,46 @@ class IrodoriTTSGenerate(io.ComfyNode):
                         mm.throw_exception_if_processing_interrupted()
                         LOGGER.info("[Irodori TTS] %s", message)
 
-                    request = SamplingRequest(
-                        text=text, caption=caption if use_caption else None,
-                        ref_wavs=reference_paths or None,
-                        reference_cache_key=tuple(reference_cache_key) if reference_paths else None,
-                        ref_embed=str(speaker_path) if speaker_path else None,
-                        speaker_uncond_mode=speaker_uncond_mode,
-                        no_ref=not (use_reference or use_speaker), seed=seed, num_steps=steps,
-                        cfg_scale_text=cfg_text, cfg_scale_speaker=cfg_reference,
-                        cfg_scale_caption=cfg_caption, seconds=seconds or None,
-                        duration_scale=duration_scale,
-                    )
-                    if length_check and request.seconds is None:
-                        from ..modules.vendor.irodori_tts import length_check as duration_check
-                        result, length_info = duration_check.synthesize(
-                            _RUNTIME, request, log_fn=log, step_callback=step_callback,
+                    pieces = []
+                    sample_rate = None
+                    for index, chunk in enumerate(chunks):
+                        remaining_chunks = len(chunks) - index - 1
+                        mm.throw_exception_if_processing_interrupted()
+                        if long_generation:
+                            log(f"[long_generation] Section {index + 1}/{len(chunks)}")
+                        request = SamplingRequest(
+                            text=chunk, caption=caption if use_caption else None,
+                            ref_wavs=reference_paths or None,
+                            reference_cache_key=tuple(reference_cache_key) if reference_paths else None,
+                            ref_embed=str(speaker_path) if speaker_path else None,
+                            speaker_uncond_mode=speaker_uncond_mode,
+                            no_ref=not (use_reference or use_speaker), seed=(seed + index) % (1 << 64), num_steps=steps,
+                            cfg_scale_text=cfg_text, cfg_scale_speaker=cfg_reference,
+                            cfg_scale_caption=cfg_caption, seconds=seconds or None,
+                            duration_scale=duration_scale,
                         )
-                        log(f"[length_check] {length_info['length_check']}")
-                    else:
-                        result = _RUNTIME.synthesize(request, log_fn=log, step_callback=step_callback)
-                    waveform = result.audio.detach().to(device="cpu", dtype=torch.float32).unsqueeze(0).contiguous()
-                    if waveform.numel() == 0 or not torch.isfinite(waveform).all():
-                        raise RuntimeError("Generated audio is empty or contains non-finite values. Retry with fp32 or a different seed.")
+                        if length_check and request.seconds is None:
+                            from ..modules.vendor.irodori_tts import length_check as duration_check
+                            result, length_info = duration_check.synthesize(
+                                _RUNTIME, request, log_fn=log, step_callback=step_callback,
+                            )
+                            log(f"[length_check] {length_info['length_check']}")
+                        else:
+                            result = _RUNTIME.synthesize(request, log_fn=log, step_callback=step_callback)
+                        waveform = result.audio.detach().to(device="cpu", dtype=torch.float32).unsqueeze(0).contiguous()
+                        if waveform.numel() == 0 or not torch.isfinite(waveform).all():
+                            raise RuntimeError("Generated audio is empty or contains non-finite values. Retry with fp32 or a different seed.")
+                        if sample_rate is None:
+                            sample_rate = result.sample_rate
+                        elif result.sample_rate != sample_rate or waveform.shape[:-1] != pieces[0].shape[:-1]:
+                            raise RuntimeError("Audio format changed between sections.")
+                        if index and pause_ms:
+                            pieces.append(waveform.new_zeros((*waveform.shape[:-1], round(sample_rate * pause_ms / 1000))))
+                        pieces.append(waveform)
+                    waveform = torch.cat(pieces, dim=-1) if len(pieces) > 1 else pieces[0]
                     progress.update_absolute(completed_steps + 3, completed_steps + 3)
                     succeeded = True
-                    return io.NodeOutput({"waveform": waveform, "sample_rate": result.sample_rate})
+                    return io.NodeOutput({"waveform": waveform, "sample_rate": sample_rate})
             finally:
                 if unload_after_generate or not succeeded:
                     # Clear the entire runtime, including codec and watermark models.

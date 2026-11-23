@@ -426,6 +426,32 @@ class RuntimeCacheTests(unittest.TestCase):
         self.assertEqual(len(self.references), 1)
         self.assertIsNotNone(self.references[0]())
 
+    def test_long_generation_reuses_runtime_conditions_and_joins_audio(self):
+        first, second = "あ" * 15 + "。", "い" * 15 + "。"
+        reference = {"waveform": torch.ones(1, 1, 100), "sample_rate": 48000}
+        out = self.generate(mode="text_caption_reference", text=first + second,
+                            caption="穏やかに", reference_audio=reference, seconds=2,
+                            seed=(1 << 64) - 1, long_generation=True, chunk_max_chars=20, pause_ms=10)
+        self.assertEqual([r.text for r in self.requests], [first, second])
+        self.assertEqual([r.seed for r in self.requests], [(1 << 64) - 1, 0])
+        self.assertTrue(all(r.caption == "穏やかに" and r.seconds == 2 for r in self.requests))
+        self.assertEqual(self.requests[0].ref_wavs, self.requests[1].ref_wavs)
+        self.assertEqual(len(self.references), 1)
+        expected = torch.cat([torch.ones(100), torch.zeros(480), torch.ones(100)])
+        torch.testing.assert_close(out.result[0]["waveform"], expected.reshape(1, 1, -1))
+        out = self.generate(text=first + second, long_generation=True, chunk_max_chars=20, pause_ms=0)
+        self.assertEqual(out.result[0]["waveform"].shape, (1, 1, 200))
+
+    def test_long_generation_split_limits_and_single_section(self):
+        split = nodes.split_long_text
+        self.assertEqual(split("あ" * 42, 20), ["あ" * 20, "あ" * 20, "ああ"])
+        self.assertEqual(split("A" * 13 + "。\r\n" + "B" * 13, 20), ["A" * 13 + "。", "B" * 13])
+        self.assertEqual(split("A" * 13 + "、" + "B" * 13, 20), ["A" * 13 + "、", "B" * 13])
+        out = self.generate(text="短文です。", long_generation=True, pause_ms=500)
+        self.assertEqual(out.result[0]["waveform"].shape, (1, 1, 100))
+        with self.assertRaises(ValueError):
+            self.generate(long_generation=True, chunk_max_chars=0)
+
     def test_attention_backend_is_scoped_and_reuses_runtime(self):
         attention = importlib.import_module(f"{PACKAGE}.modules.vendor.irodori_tts.attention")
         self.generate()

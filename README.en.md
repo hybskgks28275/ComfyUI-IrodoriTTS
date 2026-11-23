@@ -97,7 +97,11 @@ The runtime converts each clip to mono, normalizes volume, encodes it, and combi
 
 ### Model selection
 
-Choose a checkpoint in `model_name`. The default is `Irodori-TTS-v4.1-Small`. Small and Large support all six generation modes. The standard Large model takes about 13.2 GB on disk. Its weights alone use approximately 6.1 GiB in BF16 or 12.3 GiB in FP32. On a compatible GPU, use `precision=bf16` and `codec_device=cpu` to reduce VRAM use.
+Choose a checkpoint in `model_name`. The default is `Irodori-TTS-v4.1-Small`. Small and Large support all six generation modes. The standard Large model takes about 13.2 GB on disk. Its weights alone use approximately 6.1 GiB in BF16 or 12.3 GiB in FP32.
+
+**System RAM on an 8 GB VRAM GPU:** Dynamic VRAM keeps model weights in system RAM. For the unquantized `Irodori-TTS-v4-Large` checkpoint, allow about 6.1 GiB for BF16 weights alone or 12.3 GiB for FP32 weights. Additional free RAM is needed for temporary allocations during loading, ComfyUI itself, and the codec when it runs on the CPU. The amount of free RAM required depends on precision and workflow. The minimum system RAM for an 8 GB VRAM configuration has yet to be verified.
+
+On a CUDA GPU with BF16 support, enable Dynamic VRAM in ComfyUI and select `dynamic_vram=true`, `precision=bf16`, and `codec_device=cpu` in the Generate node. This places the codec in system RAM.
 
 ### Official quantized models
 
@@ -152,7 +156,7 @@ Match each asset to the base checkpoint used to train it. LoRA runs without merg
 | `split_rare_tokens` | `true`. Splits rare long tokens in Small models to reduce misreadings. Changing this setting reloads the model. |
 | `length_check` | `false`. With v4.1 Small and `seconds=0`, checks where the reading ends and may regenerate with the same seed at a shorter duration. Extra passes can increase generation time. |
 
-Hold a numeric arrow in the classic view or the minus/plus button in Nodes 2.0 to keep changing the value. The control respects the field's step and limits. Split long scripts into shorter passages before generating.
+Hold a numeric arrow in the classic view or the minus/plus button in Nodes 2.0 to keep changing the value. The control respects the field's step and limits. Enable **Long generation** (`long_generation`, off by default) in any of the six modes to split a script at punctuation or line breaks and synthesize it sequentially. Set `chunk_max_chars` for the maximum characters per section (default 80) and `pause_ms` for silence between sections (default 250 ms, or 0 for none). With `seconds=0` each section gets a predicted duration. A fixed duration applies per section. The seed increases by one for each section. Connect the single joined `AUDIO` output to Save Audio for playback and export.
 
 ### Attention backend
 

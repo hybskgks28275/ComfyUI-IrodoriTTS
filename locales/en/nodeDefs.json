@@ -125,6 +125,18 @@
       "length_check": {
         "name": "Length check",
         "tooltip": "For v4.1-Small with automatic duration, check for excess length and regenerate at a shorter duration when needed."
+      },
+      "long_generation": {
+        "name": "Long generation",
+        "tooltip": "Split long text and return one joined audio clip. Fixed seconds apply to each section."
+      },
+      "chunk_max_chars": {
+        "name": "Maximum characters per section",
+        "tooltip": "Prefer punctuation and line breaks when splitting."
+      },
+      "pause_ms": {
+        "name": "Pause between sections (ms)",
+        "tooltip": "Silence inserted only between sections."
       }
     },
     "outputs": {
